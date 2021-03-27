@@ -1,8 +1,12 @@
-# Authentication, Authorization
+# Authentication, Authorization, STS, IdentityServer4
 
-- [Authentication, Authorization](#authentication-authorization)
-  - [Brian Noyes](#brian-noyes)
+- [Authentication, Authorization, STS, IdentityServer4](#authentication-authorization-sts-identityserver4)
   - [Introduction](#introduction)
+    - [OpenID Connect and OAuth 2.0 – better together](#openid-connect-and-oauth-20--better-together)
+    - [History / other technologies](#history--other-technologies)
+  - [PluralSight course [Securing Angular Apps with OpenID Connect and OAuth 2]](#pluralsight-course-securing-angular-apps-with-openid-connect-and-oauth-2)
+    - [Brian Noyes](#brian-noyes)
+    - [Introduction of the PluralSight course](#introduction-of-the-pluralsight-course)
     - [Authentication - Overview](#authentication---overview)
     - [Authorization - Overview](#authorization---overview)
   - [Authentication](#authentication)
@@ -42,12 +46,37 @@
     - [Resource Server Responsibilities](#resource-server-responsibilities)
     - [Consent](#consent)
   - [Policy](#policy)
-
-## Brian Noyes
-
-Many thanks to Brian Noyes and his wonderful Pluralsight course [Securing Angular Apps with OpenID Connect and OAuth 2](https://app.pluralsight.com/library/courses/openid-and-oauth2-securing-angular-apps/table-of-contents)
+- [IdentityServer4](#identityserver4)
+  - [Big Picture](#big-picture)
+  - [Similar products](#similar-products)
+  - [Use Cases](#use-cases)
+  - [config](#config)
+  - [Example 2: Protecting an API using Client Credentials](#example-2-protecting-an-api-using-client-credentials)
+    - [Create and Config Server](#create-and-config-server)
+    - [Add API](#add-api)
+    - [Add a Scope](#add-a-scope)
 
 ## Introduction
+
+### OpenID Connect and OAuth 2.0 – better together
+
+OpenID Connect and OAuth 2.0 are very similar – in fact OpenID Connect is an extension on top of OAuth 2.0. The two fundamental security concerns, authentication and API access, are combined into a single protocol - often with a single round trip to the security token service.
+
+### History / other technologies
+
+The most common authentication protocols are:
+
+- SAML2p (being the most popular and the most widely deployed)
+- WS-Federation
+- OpenID Connect
+
+## PluralSight course [Securing Angular Apps with OpenID Connect and OAuth 2]
+
+### Brian Noyes
+
+Many thanks to Brian Noyes and his wonderful PluralSight course [Securing Angular Apps with OpenID Connect and OAuth 2](https://app.pluralsight.com/library/courses/openid-and-oauth2-securing-angular-apps/table-of-contents)
+
+### Introduction of the PluralSight course
 
 Important, but not really relevant in Angular Code (Web Server concerned)
 
@@ -350,7 +379,377 @@ constructor() {
 - configurable in server
 - often not used internally
 
-
 ## Policy
 
 ASP.NET Authorization Policy
+
+# IdentityServer4
+
+Source: <https://www.youtube.com/watch?v=nyUD-CeBSiE>
+
+## Big Picture
+
+<http://docs.identityserver.io/en/latest/intro/big_picture.html>
+
+## Similar products
+
+- PingFederate <https://developer.pingidentity.com/en/cloud-software/pingfederate.html>
+- AAD <https://azure.microsoft.com/en-us/services/active-directory/>
+- Okta
+- Auth0
+
+## Use Cases
+
+- Authentication
+- Chained Authentication
+  - Twitter
+  - Google
+  - AAD
+  - Windows Domain
+- Multi Factor Login
+- EULA Checkbox
+- change to another provider without changing app
+- protects/centralizes CI data (date of birth, ...)
+
+## config
+
+We need to configure:
+
+- users
+  - `IProfileService`
+- clients
+  - `IClientStore`
+- resources, which needs to be protected (consuming apps)
+  - `IResourceStore`
+
+```cs
+// activates IdentityServer4
+// also activates cookie authentication middleware
+app.UseIdentityServer();
+```
+
+Use or create a certificate (f.e., use `makeCert`). Add it to Local Computer\Personal\Certificates. Check it by using `certmgr.msc`.
+
+```cs
+services.AddIdentityServer() // adds core services
+    .AddSigningCredential("CN=sts") // certificate (f.e., use `makeCert`, add it to Local Computer\Personal\Certificates. check `certmgr.msc`)
+    .AddTestUsers(TestUser.Users) // add users
+    .AddInMemoryClients(Config.GetClients()) // add clients
+    .AddInMemoryIdentityResources(Config.GetIdentityResources()) // add identity resources
+    .AddInMemoryApiResources(Config.GetApiResources()); // add api resources
+```
+
+Config client
+
+```cs
+public static IEnumerable<Client> GetClients(){
+  return new Client[] {
+    new Client {
+      ClientId = "mvc",
+      ClientName = "MVC Demo",
+      AllowedGrantTypes = GrantTypes.Implicit,
+      RedirectUris = { "http://localhost:25326/signing-oidc" }, // grab this from the client config
+      AllowedScopes = { "openid", "email", "office" } // set up an "allowed list"
+    }
+  }
+}
+```
+
+Config Identity Resources
+
+```cs
+public static IEnumerable<IdentityResource> GetIdentityResource(){
+  return new IdentityResource[] {
+    new IdentityResource.OpenId(), // well-known claims
+    new IdentityResource.Email(),
+    new IdentityResource.Profile(),
+    new IdentityResource {
+      Name = "office",
+      UserClaims = { "office_number" }
+    }
+}
+```
+
+Config Users
+
+```cs
+public static List<TestUser> Users = new List<TestUser>{
+  new TestUser { SubjectId = 818727, Username = "alice", Password = "alice",
+    Claims = {
+      new Claim ("office_number", "25"),
+      new Claim (JwtClaimTypes.Name, "Alice Smith"),
+      new Claim (JwtClaimTypes.GivenName, "Alice"),
+      new Claim (JwtClaimTypes.FamilyName, "Smith"),
+    }
+  }
+}
+```
+
+... TODO ...
+
+## Example 2: Protecting an API using Client Credentials
+
+From <http://docs.identityserver.io/en/latest/quickstarts/1_client_credentials.html>
+
+Install or Update templates
+
+`dotnet new -i IdentityServer4.Templates`
+
+or
+
+`dotnet new -i IdentityServer4.Templates –nuget-source https://api.nuget.org/v3/index.json`
+
+### Create and Config Server
+
+```cmd
+md quickstart
+cd quickstart
+md src
+cd src
+dotnet new is4empty -n IdentityServer
+cd ..
+dotnet new sln -n Quickstart
+dotnet sln add .\src\IdentityServer\IdentityServer.csproj
+```
+
+Add scope:
+
+```cs
+public static class Config
+{
+    public static IEnumerable<ApiScope> ApiScopes =>
+        new List<ApiScope>
+        {
+            new ApiScope("api1", "My API")
+        };
+}
+```
+
+Define Client
+
+```cs
+public static IEnumerable<Client> Clients =>
+    new List<Client>
+    {
+        new Client
+        {
+            ClientId = "client",
+
+            // no interactive user, use the clientid/secret for authentication
+            AllowedGrantTypes = GrantTypes.ClientCredentials,
+
+            // secret for authentication
+            ClientSecrets =
+            {
+                new Secret("secret".Sha256())
+            },
+
+            // scopes that client has access to
+            AllowedScopes = { "api1" }
+        }
+    };
+```
+
+Config IdentityServer4
+
+```cs
+public void ConfigureServices(IServiceCollection services)
+{
+    var builder = services.AddIdentityServer()
+        .AddDeveloperSigningCredential()        //This is for dev only scenarios when you don’t have a certificate to use.
+        .AddInMemoryApiScopes(Config.ApiScopes)
+        .AddInMemoryClients(Config.Clients);
+
+    // omitted for brevity
+}
+```
+
+Run it and test it:
+`https://localhost:5001/.well-known/openid-configuration`
+
+At first startup, IdentityServer will create a developer signing key for you, it’s a file called `tempkey.jwk`. You don’t have to check that file into your source control, it will be re-created if it is not present.
+
+### Add API
+
+```cmd
+dotnet new webapi -n Api
+cd ..
+dotnet sln add .\src\Api\Api.csproj
+dotnet add .\\src\\api\\Api.csproj package Microsoft.AspNetCore.Authentication.JwtBearer
+```
+
+Change applicationUrl in launchSettings.json to:
+`"applicationUrl": "https://localhost:6001"`
+
+Add a new Class:
+
+```cs
+[Route("identity")]
+[Authorize]
+public class IdentityController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult Get()
+    {
+        return new JsonResult(from c in User.Claims select new { c.Type, c.Value });
+    }
+}
+```
+
+In case `AddJwtBearer` is missing, add this nuget package: `Microsoft.AspNetCore.Authentication`
+
+`<PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="5.0.1" />`
+
+Update Startup.cs
+
+```cs
+public class Startup
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddControllers();
+
+        // add this config:
+        services
+          // adds the authentication services to DI and configures Bearer as the default scheme.
+          .AddAuthentication("Bearer")
+            .AddJwtBearer("Bearer", options =>
+            {
+                options.Authority = "https://localhost:5001";
+
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    // see: http://docs.identityserver.io/en/latest/topics/resources.html#refresources
+                    ValidateAudience = false 
+                };
+            });
+    }
+
+    public void Configure(IApplicationBuilder app)
+    {
+        app.UseRouting();
+
+        // adds the authentication middleware to the pipeline so authentication will be performed automatically on every call into the host.
+        app.UseAuthentication(); // add this line
+
+        // adds the authorization middleware to make sure, our API endpoint cannot be accessed by anonymous clients.
+        app.UseAuthorization();
+
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+        });
+    }
+}
+```
+
+For now, `https://localhost:6001/identity` will return 401
+
+Add a client:
+
+```cmd
+dotnet new console -n Client
+cd ..
+dotnet sln add .\src\Client\Client.csproj
+cd src
+cd client
+dotnet add package IdentityModel
+```
+
+Client Code:
+
+```c#
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+using IdentityModel.Client;
+
+//.NET 5 top level statements (no class and namespace needed anymore)
+
+Console.WriteLine("Hello World!");
+
+// discover endpoints from metadata
+var client = new HttpClient();
+var disco = await client.GetDiscoveryDocumentAsync("https://localhost:5001");
+if (disco.IsError)
+{
+    Console.WriteLine(disco.Error);
+    return;
+}
+
+// request token
+var tokenResponse = await client.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
+{
+    Address = disco.TokenEndpoint,
+
+    ClientId = "client",
+    ClientSecret = "secret",
+    Scope = "api1"
+});
+
+if (tokenResponse.IsError)
+{
+    Console.WriteLine(tokenResponse.Error);
+    return;
+}
+
+Console.WriteLine(tokenResponse.Json);
+```
+
+Set all projects as startup (right-click on solution) and run them all by pressing F5.
+
+>If you get an error connecting it may be that you are running https and the development certificate for `localhost` is not trusted. You can run `dotnet dev-certs https --trust` in order to trust the development certificate. This only needs to be done once.
+
+Copy the string after `access_token` and paste it to `https://jwt.io/` to see the content.
+
+Call the api:
+
+```cs
+// call api
+var apiClient = new HttpClient();
+apiClient.SetBearerToken(tokenResponse.AccessToken);
+
+var response = await apiClient.GetAsync("https://localhost:6001/identity");
+if (!response.IsSuccessStatusCode)
+{
+    Console.WriteLine(response.StatusCode);
+}
+else
+{
+    var content = await response.Content.ReadAsStringAsync();
+    Console.WriteLine(JArray.Parse(content));
+}
+```
+
+### Add a Scope
+
+<http://docs.identityserver.io/en/latest/quickstarts/1_client_credentials.html#authorization-at-the-api>
+
+Add this new policy rule to the API:
+
+```cs
+services.AddAuthorization(options =>
+{
+    options.AddPolicy("ApiScope", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim("scope", "api1");
+    });
+});
+```
+
+Enforce it in the API:
+
+```cs
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapControllers()
+        .RequireAuthorization("ApiScope");
+});
+```
+
+Test it: change api1 to 2 (either on api or client side). You should get an error 400.
+
+TODO: next: <http://docs.identityserver.io/en/latest/quickstarts/2_interactive_aspnetcore.htm
+
+TODO: next: use this in the Angular example
