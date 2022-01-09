@@ -51,10 +51,11 @@
   - [Similar products](#similar-products)
   - [Use Cases](#use-cases)
   - [config](#config)
-  - [Example 2: Protecting an API using Client Credentials](#example-2-protecting-an-api-using-client-credentials)
+  - [Example "Quickstart 1": Protecting an API using Client Credentials](#example-quickstart-1-protecting-an-api-using-client-credentials)
     - [Create and Config Server](#create-and-config-server)
     - [Add API](#add-api)
     - [Add a Scope](#add-a-scope)
+  - [Example "Quickstart 2": IdentityServer4 UI](#example-quickstart-2-identityserver4-ui)
 
 ## Introduction
 
@@ -487,7 +488,7 @@ public static List<TestUser> Users = new List<TestUser>{
 
 ... TODO ...
 
-## Example 2: Protecting an API using Client Credentials
+## Example "Quickstart 1": Protecting an API using Client Credentials
 
 From <http://docs.identityserver.io/en/latest/quickstarts/1_client_credentials.html>
 
@@ -750,6 +751,113 @@ app.UseEndpoints(endpoints =>
 
 Test it: change api1 to 2 (either on api or client side). You should get an error 400.
 
-TODO: next: <http://docs.identityserver.io/en/latest/quickstarts/2_interactive_aspnetcore.htm
+## Example "Quickstart 2": IdentityServer4 UI
+
+source: <<http://docs.identityserver.io/en/latest/quickstarts/2_interactive_aspnetcore.htm>
+
+```cmd
+md src
+cd src
+md IdentityServer
+cd IdentityServer
+rem is4inmem combines a basic IdentityServer including the standard UI.
+dotnet new is4inmem
+cd..
+dotnet new mvc -n MvcClient
+dotnet sln add .\MvcClient\MvcClient.csproj
+cd MvcClient
+dotnet add package Microsoft.AspNetCore.Authentication.OpenIdConnect
+```
+
+Add this to `ConfigureServices` in StartUp.cs:
+
+```cs
+// add the following lines
+
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
+
+services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = "Cookies";
+        options.DefaultChallengeScheme = "oidc";
+    })
+    .AddCookie("Cookies")
+    .AddOpenIdConnect("oidc", options =>
+    {
+        options.Authority = "https://localhost:5001";
+
+        options.ClientId = "mvc";
+        options.ClientSecret = "secret";
+        options.ResponseType = "code";
+
+        options.SaveTokens = true;
+    });
+```
+
+>We use the `authorization code flow with PKCE` to connect to the OpenID Connect provider. <http://docs.identityserver.io/en/latest/topics/grant_types.html#refgranttypes>
+
+```cs
+app.UseAuthentication(); // add this line
+app.UseAuthorization();
+
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapDefaultControllerRoute() // add this lines
+        .RequireAuthorization(); // adds [Authorize] attribute to all controllers
+});
+```
+
+Show Users and Claims in Home\Index.cshtml
+
+```cs
+@using Microsoft.AspNetCore.Authentication
+
+<h2>Claims</h2>
+
+<dl>
+    @foreach (var claim in User.Claims)
+    {
+        <dt>@claim.Type</dt>
+        <dd>@claim.Value</dd>
+    }
+</dl>
+
+<h2>Properties</h2>
+
+<dl>
+    @foreach (var prop in (await Context.AuthenticateAsync()).Properties.Items)
+    {
+        <dt>@prop.Key</dt>
+        <dd>@prop.Value</dd>
+    }
+</dl>
+```
+
+Check config: added Users, IdentityResources, ApiScopes, Clients.
+
+Add Client config for Quickstart 2:
+
+```cs
+// "Quickstart 2": interactive ASP.NET Core MVC client
+new Client
+{
+    ClientId = "mvc",
+    ClientSecrets = { new Secret("secret".Sha256()) },
+
+    AllowedGrantTypes = GrantTypes.Code,
+
+    // where to redirect to after login
+    RedirectUris = { "https://localhost:5002/signin-oidc" },
+
+    // where to redirect to after logout
+    PostLogoutRedirectUris = { "https://localhost:5002/signout-callback-oidc" },
+
+    AllowedScopes = new List<string>
+    {
+        IdentityServerConstants.StandardScopes.OpenId,
+        IdentityServerConstants.StandardScopes.Profile
+    }
+},
+```
 
 TODO: next: use this in the Angular example
